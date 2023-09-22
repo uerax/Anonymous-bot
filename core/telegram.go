@@ -4,20 +4,20 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	tgbot "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/uerax/Anonymous-bot/core"
 	"github.com/uerax/goconf"
 )
 
 type Telegram struct {
 	token   string
-	chatId  int
-	replyId int
+	chatId  int64
+	replyId int64
 	cmd     string
 	bot     *tgbot.BotAPI
-	senders map[int]*core.Sender
+	senders map[int64]*Sender
 }
 
 func NewTelegram() *Telegram {
@@ -26,7 +26,7 @@ func NewTelegram() *Telegram {
 		log.Panic(err)
 	}
 
-	chatId, err := goconf.VarInt("telegram", "chatId")
+	chatId, err := goconf.VarInt64("telegram", "chatId")
 	if err != nil {
 		log.Panic(err)
 	}
@@ -42,7 +42,7 @@ func NewTelegram() *Telegram {
 		chatId:  chatId,
 		bot:     bot,
 		replyId: chatId,
-		senders: make(map[int]*core.Sender),
+		senders: make(map[int64]*Sender),
 	}
 
 	return tg
@@ -67,21 +67,25 @@ func (t *Telegram) Start() {
 		if update.Message != nil { // If we got a message
 			if update.Message.IsCommand() {
 				// 非持有者不允许调用命令
-				if update.Message.MessageID != t.chatId {
-					go t.SendMsg(update.Message.MessageID, "Do not call the command, send the message directly.")
+				if update.Message.From.ID != t.chatId {
+					go t.SendMsg(update.Message.From.ID, "Do not call the command, send the message directly.")
 					continue
 				}
 				// 命令列表
 				switch update.Message.Command() {
+				// 历史聊天记录
+				case "history":
+				// 列表
 				case "list":
-					msg := "List:"
+					msg := fmt.Sprintf("当前回复对象: `%d`\n联系人列表:", t.replyId)
 					for id, m := range t.senders {
 						msg += fmt.Sprintf("\n%s(`%d`)", m.UserName, id)
 					}
 					go t.SendMsg(t.chatId, msg)
 				// 设置回复Id
 				case "reply":
-					id, err := strconv.Atoi(update.Message.Text)
+					replyId := update.Message.Text[6:]
+					id, err := strconv.ParseInt(strings.TrimSpace(replyId), 0, 64)
 					if err != nil {
 						go t.SendMsg(t.chatId, err.Error())
 					} else {
@@ -90,25 +94,25 @@ func (t *Telegram) Start() {
 					}
 				}
 			} else {
-				if update.Message.MessageID != t.chatId {
-					if _, ok := t.senders[update.Message.MessageID]; !ok {
-						t.senders[update.Message.MessageID] = new(core.Sender)
+				if update.Message.From.ID != t.chatId {
+					if _, ok := t.senders[update.Message.From.ID]; !ok {
+						t.senders[update.Message.From.ID] = new(Sender)
 					}
-					t.senders[update.Message.MessageID].History = append(t.senders[update.Message.MessageID].History, &core.Message{
+					t.senders[update.Message.From.ID].History = append(t.senders[update.Message.From.ID].History, &Message{
 						Date: time.Now().Unix(),
 						Msg: update.Message.Text,
 						IsSend: true,
 					})
 					// 自动将其设置成待回复的ID
-					t.replyId = update.Message.MessageID
+					t.replyId = update.Message.From.ID
 					// 拼接发送消息
 					msg := fmt.Sprintf("*%s(%d) :*\n%s", update.Message.From.UserName, update.Message.From.ID, update.Message.Text)
 					go t.SendMsg(t.chatId, msg)
 				} else {
 					if _, ok := t.senders[t.replyId]; !ok {
-						t.senders[t.replyId] = new(core.Sender)
+						t.senders[t.replyId] = new(Sender)
 					}
-					t.senders[t.replyId].History = append(t.senders[t.replyId].History, &core.Message{
+					t.senders[t.replyId].History = append(t.senders[t.replyId].History, &Message{
 						Date: time.Now().Unix(),
 						Msg: update.Message.Text,
 						IsSend: false,
@@ -116,18 +120,13 @@ func (t *Telegram) Start() {
 					go t.SendMsg(t.replyId, update.Message.Text)
 				}
 			}
-			log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
-
-			msg := tgbot.NewMessage(update.Message.Chat.ID, update.Message.Text)
-			msg.ReplyToMessageID = update.Message.MessageID
-
-			bot.Send(msg)
 		}
 	}
 }
 
-func (t *Telegram) SendMsg(id int, msg string) {
-	mc := tgbot.NewMessage(int64(id), msg)
+func (t *Telegram) SendMsg(id int64, msg string) {
+	mc := tgbot.NewMessage(id, msg)
 	mc.ParseMode = "Markdown"
 	mc.DisableWebPagePreview = false
+	t.bot.Send(mc)
 }
