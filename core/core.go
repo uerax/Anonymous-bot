@@ -10,13 +10,11 @@ type Server interface {
 }
 
 func NewServer() Server {
-	mode, err := goconf.VarInt("mode")
-	if err != nil {
-		mode = 1
-	}
+	mode := goconf.VarIntOrDefault(1, "mode")
 	switch mode {
 	case 1:
 		return NewTelegram()
+	default:
+		return NewTelegram()
 	}
-	return nil
 }

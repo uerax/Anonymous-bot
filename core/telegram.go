@@ -96,28 +96,42 @@ func (t *Telegram) Start() {
 			} else {
 				if update.Message.From.ID != t.chatId {
 					if _, ok := t.senders[update.Message.From.ID]; !ok {
-						t.senders[update.Message.From.ID] = new(Sender)
+						t.senders[update.Message.From.ID] = &Sender{
+							Id:       update.Message.From.ID,
+							UserName: update.Message.From.FirstName + update.Message.From.LastName,
+							History:  make([]*Message, 0),
+						}
 					}
 					t.senders[update.Message.From.ID].History = append(t.senders[update.Message.From.ID].History, &Message{
-						Date: time.Now().Unix(),
-						Msg: update.Message.Text,
+						Date:   time.Now().Unix(),
+						Msg:    update.Message.Text,
 						IsSend: true,
 					})
 					// 自动将其设置成待回复的ID
 					t.replyId = update.Message.From.ID
 					// 拼接发送消息
-					msg := fmt.Sprintf("*%s(%d) :*\n%s", update.Message.From.UserName, update.Message.From.ID, update.Message.Text)
-					go t.SendMsg(t.chatId, msg)
+					mc := tgbot.NewForward(t.chatId, update.Message.From.ID, update.Message.MessageID)
+
+					go t.bot.Send(mc)
 				} else {
 					if _, ok := t.senders[t.replyId]; !ok {
-						t.senders[t.replyId] = new(Sender)
+						t.senders[update.Message.From.ID] = &Sender{
+							Id:       update.Message.From.ID,
+							UserName: update.Message.From.FirstName + update.Message.From.LastName,
+							History:  make([]*Message, 0),
+						}
 					}
-					t.senders[t.replyId].History = append(t.senders[t.replyId].History, &Message{
-						Date: time.Now().Unix(),
-						Msg: update.Message.Text,
-						IsSend: false,
-					})
-					go t.SendMsg(t.replyId, update.Message.Text)
+
+					if update.Message.Text != "" {
+						t.senders[t.replyId].History = append(t.senders[t.replyId].History, &Message{
+							Date:   time.Now().Unix(),
+							Msg:    update.Message.Text,
+							IsSend: false,
+						})
+					}
+					mc := tgbot.NewCopyMessage(t.chatId, update.Message.From.ID, update.Message.MessageID)
+
+					go t.bot.Send(mc)
 				}
 			}
 		}
