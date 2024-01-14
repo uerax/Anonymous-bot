@@ -1,8 +1,10 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -18,6 +20,8 @@ type Telegram struct {
 	cmd     string
 	bot     *tgbot.BotAPI
 	senders map[int64]*Sender
+	senderName map[int64]string
+	dumpPath string
 }
 
 func NewTelegram() *Telegram {
@@ -31,6 +35,9 @@ func NewTelegram() *Telegram {
 		log.Panic(err)
 	}
 
+	path, _ := goconf.VarString("telegram", "path")
+
+
 	bot, err := tgbot.NewBotAPI(token)
 	if err != nil {
 		log.Panic(err)
@@ -43,7 +50,12 @@ func NewTelegram() *Telegram {
 		bot:     bot,
 		replyId: chatId,
 		senders: make(map[int64]*Sender),
+		senderName: make(map[int64]string),
+		dumpPath: path,
 	}
+
+	tg.senders = tg.recoverPairsMap()
+	go tg.CronListDump()
 
 	return tg
 }
@@ -101,6 +113,8 @@ func (t *Telegram) Start() {
 							UserName: update.Message.From.FirstName + update.Message.From.LastName,
 							History:  make([]*Message, 0),
 						}
+						t.senderName[update.Message.From.ID] = update.Message.From.FirstName + update.Message.From.LastName
+						t.ListDump()
 					}
 					t.senders[update.Message.From.ID].History = append(t.senders[update.Message.From.ID].History, &Message{
 						Date:   time.Now().Unix(),
@@ -115,11 +129,13 @@ func (t *Telegram) Start() {
 					go t.bot.Send(mc)
 				} else {
 					if _, ok := t.senders[t.replyId]; !ok {
-						t.senders[update.Message.From.ID] = &Sender{
+						t.senders[t.replyId] = &Sender{
 							Id:       update.Message.From.ID,
 							UserName: update.Message.From.FirstName + update.Message.From.LastName,
 							History:  make([]*Message, 0),
 						}
+						t.senderName[t.replyId] = update.Message.From.FirstName + update.Message.From.LastName
+						t.ListDump()
 					}
 
 					if update.Message.Text != "" {
@@ -143,4 +159,53 @@ func (t *Telegram) SendMsg(id int64, msg string) {
 	mc.ParseMode = "Markdown"
 	mc.DisableWebPagePreview = false
 	t.bot.Send(mc)
+}
+
+func (t *Telegram) CronListDump() {
+	tick := time.NewTicker(30 * time.Minute)
+	for range tick.C {
+		t.ListDump()
+	}
+}
+
+func (t *Telegram) recoverPairsMap() map[int64]*Sender {
+	dump := make(map[int64]*Sender)
+	b, err := os.ReadFile(t.dumpPath+"list_dump.json")
+	if err != nil {
+		return dump
+	}
+
+	err = json.Unmarshal(b, &dump)
+	if err != nil {
+		return dump
+	}
+
+	return dump
+}
+
+func (t *Telegram) ListDump() {
+	if len(t.senders) == 0 {
+		return
+	}
+
+	b, err := json.Marshal(t.senders)
+
+	if err != nil {
+		return
+	}
+
+	if _, err := os.Stat(t.dumpPath); os.IsNotExist(err) { // 检查目录是否存在
+		err := os.MkdirAll(t.dumpPath, os.ModePerm) // 创建目录
+		if err != nil {
+			log.Println("创建本地文件夹失败")
+			return
+		}
+	}
+
+	err = os.WriteFile(t.dumpPath+"list_dump.json", b, 0644)
+
+	if err != nil {
+		log.Println("dump文件创建/写入失败")
+		return
+	}
 }

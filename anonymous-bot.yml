@@ -1,5 +1,9 @@
 # 1 telegram, 2 qq
 mode: 1
 telegram:
+  # 必填, 不填直接启动失败
   token:
   chatId:
+  # 备份文件地址, 如果需要自定义最后必须加 '/' 或者 '\'
+  # 例: /opt/anonymous-bot/
+  path:
