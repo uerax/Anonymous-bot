@@ -96,7 +96,7 @@ func (t *Telegram) Start() {
 					go t.SendMsg(t.chatId, msg)
 				// 设置回复Id
 				case "to":
-					replyId := update.Message.Text[6:]
+					replyId := update.Message.Text[4:]
 					id, err := strconv.ParseInt(strings.TrimSpace(replyId), 0, 64)
 					if err != nil {
 						go t.SendMsg(t.chatId, err.Error())
