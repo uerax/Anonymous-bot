@@ -83,7 +83,7 @@ func (t *Telegram) Start() {
 					}
 					go t.SendMsg(t.chatId, msg)
 				// 设置回复Id
-				case "reply":
+				case "to":
 					replyId := update.Message.Text[6:]
 					id, err := strconv.ParseInt(strings.TrimSpace(replyId), 0, 64)
 					if err != nil {
@@ -129,7 +129,7 @@ func (t *Telegram) Start() {
 							IsSend: false,
 						})
 					}
-					mc := tgbot.NewCopyMessage(t.chatId, update.Message.From.ID, update.Message.MessageID)
+					mc := tgbot.NewCopyMessage(t.replyId, update.Message.From.ID, update.Message.MessageID)
 
 					go t.bot.Send(mc)
 				}
